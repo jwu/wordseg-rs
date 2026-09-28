@@ -1,9 +1,24 @@
 [package]
-name = "wordninja-rs"
+name = "wordseg-rs"
 version = "0.1.0"
 edition = "2021"
-description = "Word-frequency re-segmentation of concatenated English ASR output (Rust port of wordninja)"
+description = "Re-segment concatenated English text into words (stdin/stdout filter)"
 license = "MIT"
+repository = "https://github.com/jwu/wordseg-rs"
+readme = "README.md"
+keywords = ["word-segmentation", "text-processing", "asr", "nlp"]
+categories = ["text-processing", "command-line-utilities"]
+# Whitelist: the word list must ship with the crate because build.rs reads it,
+# while target/ and the git metadata must not.
+include = [
+    "src/**",
+    "build.rs",
+    "data/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "README.md",
+    "LICENSE",
+]
 
 [dependencies]
 

@@ -1,11 +1,13 @@
-# wordninja-rs
+# wordseg-rs
 
-voxtype 的后处理过滤器：给 ASR 输出的**连写英文**重新分词。
+给**连写英文**重新分词的 stdin/stdout 过滤器。
 
 ```
 stdin : myfellowamericansasknotwhatyourcountrycandoforyou
 stdout: my fellow americans ask not what your country can do for you
 ```
+
+最初是为 voxtype 的 `[output.post_process]` 写的，但它和 voxtype 没有耦合：任何需要把连写英文重新分开的地方，都能把它当命令行过滤器用。
 
 ## 为什么需要它
 
@@ -35,10 +37,10 @@ stdin → stdout 管道，所以分词逻辑需要自己接。
 
 ```bash
 cargo test --release                      # 单元测试
-cargo install --path . --root ~/.local    # 安装到 ~/.local/bin/wordninja-rs
+cargo install --path . --root ~/.local    # 安装到 ~/.local/bin/wordseg-rs
 ```
 
-只要产物的话：`cargo build --release` → `target/release/wordninja-rs`（约 1.4 MB）。
+只要产物的话：`cargo build --release` → `target/release/wordseg-rs`（约 1.4 MB）。
 
 词表在编译期由 `build.rs` 解压并烘焙进二进制
 （`data/wordninja_words.txt.gz`，126136 个词，538 KB）。
@@ -50,7 +52,7 @@ cargo install --path . --root ~/.local    # 安装到 ~/.local/bin/wordninja-rs
 
 ```toml
 [output.post_process]
-command = "~/.local/bin/wordninja-rs"
+command = "~/.local/bin/wordseg-rs"
 timeout_ms = 5000
 ```
 
