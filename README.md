@@ -22,7 +22,7 @@ stdin → stdout 管道，所以分词逻辑需要自己接。
 
 ## 来源
 
-从 `~/bin/voice-input` 迁移过来的逻辑，行为保持一致：
+逻辑迁移自已归档的 [jwu/voice-input](https://github.com/jwu/voice-input)，行为保持一致：
 
 - **外层规则**（原 `english_spacing.py`）：只处理 **7 个以上连续 ASCII 字母**，
   中文原样透传；随后做 `iam → I am`、孤立 `i → I` 的大小写修正
@@ -60,7 +60,7 @@ timeout_ms = 5000
 
 ## 行为验证
 
-与 Python 版（`~/bin/voice-input/src/voxtype_post.py`）逐字节对拍：
+与迁移前的 Python 版逐字节对拍过（基准脚本随 voice-input 一起归档）：
 
 | 样本 | 结果 |
 | --- | --- |
