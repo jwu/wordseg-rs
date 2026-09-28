@@ -203,6 +203,28 @@ omnisharp
 ristretto
 sqlite
 wifi
+blockchain
+covid
+cryptocurrency
+dataset
+dropbox
+ecommerce
+esports
+ethereum
+gopro
+hashtag
+icloud
+instagram
+linkedin
+macos
+meetup
+roadmap
+selfie
+smartwatch
+spotify
+webinar
+workflow
+cybersecurity
 
 # More system
 fcitx
