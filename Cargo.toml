@@ -1,0 +1,19 @@
+[package]
+name = "wordninja-rs"
+version = "0.1.0"
+edition = "2021"
+description = "Word-frequency re-segmentation of concatenated English ASR output (Rust port of wordninja)"
+license = "MIT"
+
+[dependencies]
+
+# Only used at build time to unzip the word list; nothing lands in the binary.
+[build-dependencies]
+flate2 = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+opt-level = 3
