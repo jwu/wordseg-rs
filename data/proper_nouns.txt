@@ -1,0 +1,210 @@
+# Proper-noun list for wordseg-rs.
+#
+# wordninja's word list is frequency-ordered corpus data, so product names and
+# modern technical terms are missing from it entirely. An out-of-vocabulary
+# token costs +inf, which forces the splitter to spell it out of ordinary words:
+# "kubernetes" -> "ku berne tes". Every line here becomes a token the splitter
+# may produce, and is restored to this exact spelling on the way out.
+#
+# One term per line. The lookup key is the line lowercased with spaces removed
+# (so "Hugging Face" and "HuggingFace" collide, the last one winning), and the
+# line itself is what gets written to stdout. Blank lines and lines starting
+# with '#' are ignored.
+#
+# What belongs here, and what does not:
+#
+#   * Only terms that wordninja cannot split correctly on its own. Ordinary
+#     words are deliberately excluded — a term that is also a common English
+#     word ("fish", "bun", "kitty") would rewrite ordinary prose.
+#   * Terms are priced as if they sat at rank 1_000_000 in the frequency list:
+#     dearer than every real word, cheaper than the two or three words a failed
+#     split spells them out of. A handful of terms that happen to decompose into
+#     two very common words ("redis" = "red is", "niri" = "nir i") stay cheaper
+#     to spell out, and are covered by the whole-run match instead.
+#   * Keep entries to ASCII letters, digits and single spaces.
+
+# AI / generative models
+ComfyUI
+InvokeAI
+HuggingFace
+PyTorch
+TensorFlow
+StableDiffusion
+Midjourney
+Diffusers
+Safetensors
+ControlNet
+LoRA
+Ollama
+Qwen
+Paraformer
+OpenAI
+ChatGPT
+
+# Containers / backends / data
+Kubernetes
+GitHub
+GitLab
+PostgreSQL
+Redis
+MongoDB
+Nginx
+RabbitMQ
+GraphQL
+WebSocket
+WebRTC
+JWT
+Microservice
+
+# Languages / runtimes
+NodeJS
+Deno
+WebAssembly
+Kotlin
+Golang
+Rustlang
+
+# Linux / desktop
+niri
+Waybar
+Ghostty
+chezmoi
+Hyprland
+PipeWire
+Neovim
+NixOS
+systemd
+ArchLinux
+Alacritty
+WezTerm
+fcitx5
+fontconfig
+gtk4
+xwayland
+hyprlock
+swaylock
+neovide
+adwaita
+noto
+sarasa
+pango
+freedesktop
+inputsourcepro
+
+# Toolchain
+ESLint
+AstGrep
+LuaJIT
+StyLua
+ripgrep
+yazi
+zellij
+gitui
+bluetuith
+zeditor
+
+# CLI tools (from docs/reference-terminal.md)
+bandwhich
+btm
+btop
+chafa
+clashtui
+cmder
+conemu
+coreutils
+fanyi
+ffmpeg
+fzf
+gopass
+iina
+irfanview
+logseq
+mactop
+nushell
+ohmyzsh
+openscreen
+pngpaste
+portplayer
+procs
+pureref
+qview
+rustdesk
+rustscan
+sharex
+snipaste
+tmux
+totalcmd
+trippy
+viu
+wgetcloud
+winget
+wiremix
+xplr
+zerobrew
+zmx
+
+# System / dev tools
+avahi
+blueman
+bssh
+bvnc
+cliphist
+cmake
+comfycli
+dkms
+dufs
+fuzzel
+gamemode
+gamescope
+grapheditor
+hyprcursor
+hyprgraphics
+hyprlang
+hyprutils
+kbd
+keifu
+lazygit
+libadwaita
+localsearch
+lstopo
+mangohud
+materialx
+mimeapps
+networkmanager
+nvm
+openusd
+pavucontrol
+pinentry
+pragmata
+pulseaudio
+qvidcap
+qv4l2
+rustup
+sddm
+scrapling
+swayidle
+thunar
+upower
+usdview
+viewer5
+wireplumber
+wtype
+xdg
+xfce4
+zenity
+zoxide
+
+# Modern words
+emoji
+kubectl
+mihomo
+onedark
+omnisharp
+ristretto
+sqlite
+wifi
+
+# More system
+fcitx
+inputsource
+gstreamer

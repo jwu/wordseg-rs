@@ -42,8 +42,9 @@ cargo install --path . --root ~/.local    # 安装到 ~/.local/bin/wordseg-rs
 
 只要产物的话：`cargo build --release` → `target/release/wordseg-rs`（约 1.4 MB）。
 
-词表在编译期由 `build.rs` 解压并烘焙进二进制
-（`data/wordninja_words.txt.gz`，126136 个词，538 KB）。
+词频表在编译期由 `build.rs` 解压并烘焙进二进制（`data/wordninja_words.txt.gz`，
+126136 个词，538 KB）。专有名词表用 `include_str!` 嵌入，你自己那份在运行时读取
+—— 见「专有名词」。
 
 ## 接入 voxtype
 
@@ -66,16 +67,68 @@ timeout_ms = 5000
 | --- | --- |
 | 手工样本（中英混说、数字、撇号、大小写、空串、短串） | 14/14 一致 |
 | 随机拼词（从词表随机抽 2–7 个词拼接，300 条） | 300/300 一致 |
+| 加入专有名词表后的回归（同样的 300 条 + 常见句子，共 314 条） | 314/314 与加表前逐字节一致 |
 
-## 已知代价
+## 专有名词
 
-词频分词不认识专有名词，可能误切：
+词频表来自语料，因此缺少现代技术词和产品名。wordninja 给词表外的
+ token 记 `+∞` 代价，于是 `kubernetes` 只能被拆成 `ku berne tes`。
+
+`data/proper_nouns.txt` 补上这一层。每个词条按 rank 1_000_000 计价：
+比任何真实词都贵，但比「两三个普通词拼出来」便宜得多（`ku berne tes` 要
+35.4 nats，这个档位约 16.3）。词条同时决定输出拼写，所以 `kubernetes`
+出来就是 `Kubernetes`。
+
+词条通过两个入口起作用：
+
+1. **整体匹配** —— 一个字母串恰好等于词条时直接替换，不看长度。这是短词唯一的
+   修复途径：`github` 只有 6 个字母，永远进不了分词器。
+2. **参与分词** —— 词条进 DP 的代价表，因此嵌在长串里的也能切对：
+   `deploykubernetesnow` → `deploy Kubernetes now`。
+
+收录的边界是「wordninja 自己切不对」。普通英文词一律不收 —— 否则 `a fish`
+会被改写成 `a Fish`。
+
+### 加自己的词
+
+放一个词表到 `~/.config/wordseg-rs/words.txt`，**存盘即生效** —— 不用重编译：
+
+```bash
+mkdir -p ~/.config/wordseg-rs
+cat >> ~/.config/wordseg-rs/words.txt <<'EOF'
+wordseg-rs
+voxtype
+aicanvas
+EOF
+```
+
+格式与 `data/proper_nouns.txt` 相同（一行一个词，`#` 开头是注释）。词条里的
+`-`、`_` 和空格在匹配时会被忽略，显示形式则原样输出 —— 所以写 `wordseg-rs`
+就能把 `wordsegrs` 还原成 `wordseg-rs`。后面的定义覆盖前面的，因此你的词表
+可以改掉内置词条的拼写。
+
+也可以用环境变量指向别处，或指向多个文件（冒号分隔）：
+
+```bash
+WORDSEG_WORDS=~/my-words.txt wordseg-rs
+```
+
+文件不存在、没权限、或某行写坏了，都只是被跳过 —— 过滤器不会因此失败，
+内置那份继续生效。
+
+读一个几百行的词表带来的启动开销落在噪声里（实测 100 次：1.163 s 无词表，
+1.149 s 带 500 行词表），所以没理由为它牺牲「改完即生效」。
+
+### 已知限制
+
+少数词条恰好能拆成两个极常见的词，拆开反而更便宜，于是只有整体匹配能救它们：
 
 ```
-Kubernetes → Ku berne tes
+andthenredisandmysql → and then red is and mysql
 ```
 
-这是算法的固有局限（Python 版同样如此），不是移植引入的。
+这是代价函数的固有取舍：把 `redis` 压到能赢过 `red is` 的位置，普通英文里的
+`red is` 就会被粘成 `Redis`。目前选择不误伤普通文本。
 
 ## 许可
 

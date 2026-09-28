@@ -3,17 +3,28 @@
 //!
 //! A stdin -> stdout filter for voxtype's `[output.post_process]`. It is a Rust
 //! port of voice-input's `english_spacing.py` plus the vendored wordninja 2.0.0
-//! word-frequency splitter (MIT, see `data/wordninja-LICENSE`). The word list is
-//! baked into the binary by `build.rs`, so the result has no runtime
+//! word-frequency splitter (MIT, see `data/wordninja-LICENSE`). Both word lists
+//! are baked into the binary by `build.rs`, so the result has no runtime
 //! dependencies whatsoever — no Python, no data files.
+//!
+//! On top of the frequency list sits a proper-noun list (`data/proper_nouns.txt`
+//! plus an optional local one). Terms in it are handled in two ways: they take
+//! part in the split as if they were words, and they are restored to their
+//! published spelling on the way out.
 
 use std::collections::HashMap;
+use std::env;
+use std::fs;
 use std::io::{self, Read, Write};
+use std::path::PathBuf;
 
-#[allow(dead_code)]
 mod wordlist {
     include!(concat!(env!("OUT_DIR"), "/wordlist.rs"));
 }
+
+/// The shipped proper-noun list, embedded so the binary stays self-contained.
+/// A user's own list is read from disk at run time; see `Model::new`.
+const BAKED_WORDS: &str = include_str!("../data/proper_nouns.txt");
 
 /// `english_spacing.py` only re-segments runs of 7+ ASCII letters; shorter runs
 /// (ordinary words) are passed through untouched.
@@ -23,10 +34,72 @@ const MIN_RUN: usize = 7;
 /// float-parses to +inf — so an unknown token is effectively unreachable.
 const UNKNOWN_COST: f64 = f64::INFINITY;
 
+/// Proper nouns are priced as if they sat this far down the frequency list:
+/// dearer than every real word, yet far cheaper than the two or three ordinary
+/// words a failed split spells them out of (`ku berne tes` costs 35.4 nats,
+/// while this rank costs about 16.3). Terms that decompose into two very common
+/// words are the exception — `redis` = `red` + `is` costs 16.0 — and those are
+/// caught by the whole-run match instead of by the split.
+const PROPER_NOUN_RANK: f64 = 1_000_000.0;
+
 struct Model {
     /// token -> `ln((rank + 1) * ln(N))`, exactly as wordninja computes it.
     costs: HashMap<&'static str, f64>,
+    /// proper-noun lookup key (lowercase, punctuation stripped) -> published
+    /// spelling. Owned, because a user's list is read at run time.
+    proper: HashMap<String, String>,
     max_len: usize,
+    /// The price a proper noun is charged in the split.
+    proper_cost: f64,
+}
+
+/// Where a user's own word list is looked for. `WORDSEG_WORDS` (colon-separated)
+/// wins outright; otherwise `~/.config/wordseg-rs/words.txt`. A missing or
+/// unreadable file is not an error — the baked-in list still applies.
+fn user_word_files() -> Vec<PathBuf> {
+    if let Ok(paths) = env::var("WORDSEG_WORDS") {
+        return paths
+            .split(':')
+            .filter(|p| !p.is_empty())
+            .map(PathBuf::from)
+            .collect();
+    }
+    match env::var_os("HOME") {
+        Some(home) => vec![PathBuf::from(home).join(".config/wordseg-rs/words.txt")],
+        None => Vec::new(),
+    }
+}
+
+/// Read one word list into `into`. A line that is not a usable term is skipped
+/// rather than fatal: a typo in a user's list must never make the filter fail,
+/// because voxtype only falls back to the raw text when the command *fails*.
+///
+/// Punctuation a human would write (`-`, `_`, spaces) is dropped from the key, so
+/// "wordseg-rs" matches the letters the splitter actually sees, while the line is
+/// still emitted verbatim. Later entries win, which is how a private list
+/// overrides the shipped spelling.
+fn load_words(text: &str, into: &mut HashMap<String, String>) {
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut key = String::with_capacity(line.len());
+        let mut usable = true;
+        for c in line.chars() {
+            if matches!(c, ' ' | '-' | '_') {
+                continue;
+            }
+            if !c.is_ascii_alphanumeric() {
+                usable = false;
+                break;
+            }
+            key.push(c.to_ascii_lowercase());
+        }
+        if usable && !key.is_empty() {
+            into.insert(key, line.to_owned());
+        }
+    }
 }
 
 impl Model {
@@ -37,18 +110,52 @@ impl Model {
         for (rank, word) in words.into_iter().enumerate() {
             costs.insert(word, (((rank + 1) as f64) * ln_n).ln());
         }
+
+        let mut proper = HashMap::new();
+        load_words(BAKED_WORDS, &mut proper);
+        for path in user_word_files() {
+            if let Ok(text) = fs::read_to_string(&path) {
+                load_words(&text, &mut proper);
+            }
+        }
+        let max_proper_len = proper.keys().map(|k| k.chars().count()).max().unwrap_or(0);
+
         Self {
             costs,
-            max_len: wordlist::MAX_WORD_LEN,
+            proper,
+            max_len: wordlist::MAX_WORD_LEN.max(max_proper_len),
+            proper_cost: ((PROPER_NOUN_RANK + 1.0) * ln_n).ln(),
         }
     }
 
     fn cost_of(&self, token: &[char]) -> f64 {
         let lowered: String = token.iter().collect::<String>().to_ascii_lowercase();
-        self.costs
-            .get(lowered.as_str())
-            .copied()
-            .unwrap_or(UNKNOWN_COST)
+        if let Some(&cost) = self.costs.get(lowered.as_str()) {
+            return cost;
+        }
+        if self.proper.contains_key(lowered.as_str()) {
+            return self.proper_cost;
+        }
+        UNKNOWN_COST
+    }
+
+    /// The published spelling of an already-split token, if it is a known term.
+    fn restore(&self, token: &str) -> Option<&str> {
+        if let Some(display) = self.proper.get(token) {
+            return Some(display);
+        }
+        let lowered = token.to_ascii_lowercase();
+        self.proper.get(lowered.as_str()).map(String::as_str)
+    }
+
+    /// A whole run that is a proper noun, regardless of `MIN_RUN`. This is what
+    /// keeps short terms right: "github" (6 letters) and "systemd" (7) never
+    /// reach the splitter, so the split cannot be what fixes them.
+    fn lookup(&self, run: &str) -> Option<&str> {
+        if run.chars().count() > self.max_len {
+            return None;
+        }
+        self.restore(run)
     }
 
     /// wordninja `LanguageModel._split`'s `best_match`: walk the window
@@ -125,12 +232,24 @@ fn add_english_spaces(text: &str, model: &Model) -> String {
             i += 1;
         }
         let run = &chars[start..i];
+        let run_str: String = run.iter().collect();
+
+        // A run that *is* a term: rewrite it whatever its length, because
+        // MIN_RUN would otherwise leave short ones verbatim and lowercase.
+        if let Some(display) = model.lookup(&run_str) {
+            spaced.push_str(display);
+            continue;
+        }
 
         // Only long runs are candidates, and only if the split is worth it.
         if run.len() >= MIN_RUN {
             let parts = model.split_segment(run);
             if parts.len() > 1 {
-                spaced.push_str(&parts.join(" "));
+                let restored: Vec<&str> = parts
+                    .iter()
+                    .map(|part| model.restore(part).unwrap_or(part.as_str()))
+                    .collect();
+                spaced.push_str(&restored.join(" "));
                 continue;
             }
         }
@@ -239,5 +358,65 @@ mod tests {
     #[test]
     fn empty_input_is_empty_output() {
         assert_eq!(spaced(""), "");
+    }
+
+    #[test]
+    fn shipped_word_list_is_well_formed() {
+        let mut proper = HashMap::new();
+        load_words(BAKED_WORDS, &mut proper);
+        let entries = BAKED_WORDS
+            .lines()
+            .filter(|l| {
+                let l = l.trim();
+                !l.is_empty() && !l.starts_with('#')
+            })
+            .count();
+        assert_eq!(
+            proper.len(),
+            entries,
+            "data/proper_nouns.txt has a line that is not a usable term"
+        );
+    }
+
+    #[test]
+    fn malformed_user_words_are_skipped_not_fatal() {
+        let mut proper = HashMap::new();
+        load_words("good term\n!!bad!!\n中文\n\n# comment\n", &mut proper);
+        assert_eq!(
+            proper.get("goodterm").map(String::as_str),
+            Some("good term")
+        );
+        assert_eq!(proper.len(), 1);
+    }
+
+    #[test]
+    fn last_definition_wins() {
+        let mut proper = HashMap::new();
+        load_words("HuggingFace\n", &mut proper);
+        load_words("hugging face\n", &mut proper);
+        assert_eq!(
+            proper.get("huggingface").map(String::as_str),
+            Some("hugging face")
+        );
+    }
+
+    #[test]
+    fn splits_terms_the_word_list_does_not_know() {
+        // The bug this list exists for: wordninja spells it out of real words.
+        assert_eq!(spaced("kubernetes"), "Kubernetes");
+        assert_eq!(spaced("pytorch"), "PyTorch");
+        assert_eq!(spaced("huggingface"), "HuggingFace");
+    }
+
+    #[test]
+    fn splits_terms_embedded_in_a_long_run() {
+        assert_eq!(spaced("deploykubernetesnow"), "deploy Kubernetes now");
+    }
+
+    #[test]
+    fn leaves_ordinary_english_alone() {
+        // Terms that are also ordinary words are deliberately absent, so plain
+        // prose must come out untouched.
+        assert_eq!(spaced("a red fish and a bun"), "a red fish and a bun");
     }
 }
